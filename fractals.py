@@ -13,6 +13,8 @@
 from decimal import *
 getcontext().traps[FloatOperation] = True
 
+import math
+
 # A point is a tuple of Decimals, where the first element is the real part of
 # the number and the second element is the imaginary part of the number.
 
@@ -62,42 +64,57 @@ def map_pixel_to_point(pixel_x, pixel_y, width, height, min_x, max_x, min_y,
     point_y = Decimal(str((1 - pixel_y / height) * (max_y - min_y) + min_y))
     return (point_x, point_y)
 
-# Take the number of iterations required to escape and return an integer color
-# value in [0, 255]. A value of -1 signifies the test point did not escape the
-# testing boundary; ie the point is in the Julia set.
-# These methods are rigidly fixed for now but shall become more flexible later.
-def red(value):
-    return 0
+# Color rendering functions take as input the number of iterations that were
+# necessary to determine that the point being rendered is not in the set as
+# well as the maximum number of iterations applied to each point; if the point
+# being rendered is actually in the set, the number of iterations is -1. Color
+# Rendering functions should return an integer in [0, 255], where 0 is the
+# complete absence of that color.
 
-def green(value):
-    return 255
-
-def blue(value):
-    if value >= 0:
+# Color rendering functions that yield grayscale images.
+def grayscale(iterations, max_iterations):
+    if iterations == -1:
         return 255
     else:
-        return 0
+        return int(iterations / max_iterations * 255)
+
+grayscale_render_functions = [grayscale, grayscale, grayscale]
 
 # Save the image to a file using the simple PPM format. Takes as input a file
 # name and a two dimensional array of the number of iterations required for
 # each pixel to be ruled out of being in the set, or -1 if the pixel is in the
-# set.
-def write_ppm(filename, pixel_data):
+# set. Also takes as input an array of the functions to choose RGB values for a
+# given pixel, as well as the maximum number of iterations applied to test a
+# point, which is used for color selection.
+def render_ppm(filename, pixel_data, render_functions, max_iterations):
     # Determine the image's dimensions.
     width = len(pixel_data[0])
     height = len(pixel_data)
+    # Alias the supplied color choosing functions
+    red, green, blue = render_functions
     # Open image and write header
     image = open(filename, "w")
     image.write("P3\n{} {}\n255\n".format(width, height))
     # Write the color information for each row.
     for row in pixel_data:
         # Convert all the color information for the row into a string
-        row_text = " ".join([str(red(cell)) + " " + str(green(cell)) + " " +
-                             str(blue(cell)) for cell in row])
+        row_text = " ".join([str(red(cell, max_iterations)) + " "
+                             + str(green(cell, max_iterations)) + " "
+                             + str(blue(cell, max_iterations)) for cell in row])
         # Write the row data
         image.write(row_text)
         image.write("\n")
     image.close()
+
+# Render a batch of fractals.
+def render_ppm_batch(filename_prefix, pixel_data_set, render_functions,
+                     max_iterations):
+    for fractal_number in range(len(pixel_data_set)):
+        print("Rendering " + str(fractal_number+1) + " out of " +
+              str(len(pixel_data_set)))
+        pixel_data = pixel_data_set[fractal_number]
+        filename = filename_prefix + "{:05}".format(fractal_number) + ".ppm"
+        render_ppm(filename, pixel_data, render_functions, max_iterations)
 
 # Generate a two dimensional array of data about whether pixels in a rectangle
 # are within a Julia set or not
@@ -107,8 +124,6 @@ def draw(width, height, min_x, max_x, min_y, max_y, iterate_parameter,
     # For each row
     for y in range(height):
         row = []
-        # Print an update message
-        print("Row {}/{}".format(y, height))
         # For each column
         for x in range(width):
             # Get the complex number corresponding to this pixel
@@ -122,6 +137,38 @@ def draw(width, height, min_x, max_x, min_y, max_y, iterate_parameter,
         pixel_data.append(row)
     return pixel_data
 
-# Draw a sample fractal
-write_ppm("sample.ppm", draw(500, 500, -2.0, 2.0, -2.0, 2.0, [Decimal('-.8'),
-                           Decimal('.156')], 50, 5))
+# Generate sets of data describing which points in an eventual image are within
+# some specific Julia set, one set for each mathematical parameter in the
+# supplied list
+def draw_batch(width, height, min_x, max_x, min_y, max_y,
+               iterate_parameter_list, iterations, boundary):
+    pixel_data_set = []
+    # For each fractal to draw
+    for index in range(len(iterate_parameter_list)):
+        print("On " + str(index+1) + " of " +
+              str(len(iterate_parameter_list)))
+        # Get current parameter
+        iterate_parameter = iterate_parameter_list[index]
+        # Computing the drawing data
+        pixel_data = draw(width, height, min_x, max_x, min_y, max_y,
+                          iterate_parameter, iterations, boundary)
+        # Add the drawing data to the result list
+        pixel_data_set.append(pixel_data)
+    return pixel_data_set
+
+# Generate a list of parameters that are a set of equidistant points on a circle
+# of a supplied radius.
+def generate_parameter_circle_list(radius, parameter_count):
+    parameters = []
+    for i in range(parameter_count):
+        angle = i / parameter_count * 2 * math.pi
+        parameter = [Decimal(str(radius * math.cos(angle))),
+                             Decimal(str(radius * math.sin(angle)))]
+        print(parameter)
+        parameters.append(parameter)
+    return parameters
+
+# Draw a sample batch of fractals
+render_ppm_batch("gifsource", draw_batch(500, 500, -2.0, 2.0, -2.0, 2.0,
+                generate_parameter_circle_list(.7885, 100), 50, 5),
+                 grayscale_render_functions, 50)
