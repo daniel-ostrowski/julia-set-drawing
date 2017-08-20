@@ -8,12 +8,16 @@
 # This program performs a feasible number of iterations and tests to see if the
 # final value has a sufficiently small magnitude.
 
+# Maximum number of separate processes to use to draw batches of fractals.
+PROCESSES = 4
+
 # Use `Decimal`s so that more significant figures can optionally be used, which
 # would be necessary to draw small region in detail.
 from decimal import *
 getcontext().traps[FloatOperation] = True
 
 import math
+import multiprocessing
 
 # A point is a tuple of Decimals, where the first element is the real part of
 # the number and the second element is the imaginary part of the number.
@@ -142,19 +146,19 @@ def draw(width, height, min_x, max_x, min_y, max_y, iterate_parameter,
 # supplied list
 def draw_batch(width, height, min_x, max_x, min_y, max_y,
                iterate_parameter_list, iterations, boundary):
-    pixel_data_set = []
-    # For each fractal to draw
-    for index in range(len(iterate_parameter_list)):
-        print("On " + str(index+1) + " of " +
-              str(len(iterate_parameter_list)))
-        # Get current parameter
-        iterate_parameter = iterate_parameter_list[index]
-        # Computing the drawing data
-        pixel_data = draw(width, height, min_x, max_x, min_y, max_y,
-                          iterate_parameter, iterations, boundary)
-        # Add the drawing data to the result list
-        pixel_data_set.append(pixel_data)
-    return pixel_data_set
+    # Count the number of items
+    items = len(iterate_parameter_list)
+    # Use up to four separate processes to draw
+    with multiprocessing.Pool(PROCESSES) as pool:
+        # Build the list of parameter lists. Only the iterate parameter changes
+        parameter_lists = zip([width] * items, [height] * items,
+                              [min_x] * items, [max_x] * items,
+                              [min_y] * items, [max_y] * items,
+                              iterate_parameter_list, [iterations] * items,
+                              [boundary] * items)
+        # Generate the drawing data using the Pool
+        pixel_data_set = pool.starmap(draw, parameter_lists)
+        return pixel_data_set
 
 # Generate a list of parameters that are a set of equidistant points on a circle
 # of a supplied radius.
@@ -170,5 +174,7 @@ def generate_parameter_circle_list(radius, parameter_count):
 
 # Draw a sample batch of fractals
 render_ppm_batch("gifsource", draw_batch(500, 500, -2.0, 2.0, -2.0, 2.0,
-                generate_parameter_circle_list(.7885, 100), 50, 5),
+                 generate_parameter_circle_list(.7885, 10), 50, 5),
                  grayscale_render_functions, 50)
+
+#render_ppm("sample.ppm", draw(500, 500, -2.0, 2.0, -2.0, 2.0, [Decimal('.3'), Decimal('.3')], 50, 5, -1), grayscale_render_functions, 50)
